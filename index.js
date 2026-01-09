@@ -22,13 +22,24 @@ app.get('/api/rastreio', async (req, res) => {
 
         const order = orders[0];
         
-        // --- ATUALIZAÇÃO: Enviando o status do pagamento ---
+        // --- NOVA VERSÃO: Com Produtos e Endereço ---
         const responseData = {
             name: order.name,
             created_at: order.created_at,
             trackingNumber: order.fulfillments?.[0]?.tracking_number || null,
             customer_name: order.customer ? `${order.customer.first_name} ${order.customer.last_name}` : 'Cliente',
-            financial_status: order.financial_status // O SEGREDO ESTÁ AQUI
+            financial_status: order.financial_status,
+            // NOVOS DADOS IMPORTANTES
+            line_items: order.line_items.map(item => ({
+                title: item.title,
+                quantity: item.quantity,
+                price: item.price,
+                variant_title: item.variant_title
+            })),
+            total_discounts: order.total_discounts,
+            total_price: order.total_price,
+            currency: order.currency,
+            shipping_address: order.shipping_address || {} // Endereço para personalizar o texto
         };
 
         return res.json(responseData);
