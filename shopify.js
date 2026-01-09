@@ -1,4 +1,4 @@
-// shopify.js - VERSÃO ESTÁVEL (SEM VARREDURA PESADA)
+// shopify.js - VERSÃO ESTÁVEL
 import fetch from 'node-fetch';
 
 const STORE_URL = (process.env.SHOPIFY_STORE_URL || '').replace(/\/$/, '');
@@ -45,12 +45,9 @@ function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
 
 // --- BUSCA RÁPIDA POR CPF ---
 async function getOrderByCPF(cpf) {
-    // Busca cliente pelo CPF
     const d = await shopifyGet('/customers/search.json', { query: cpf, limit: 1 });
-    
     if (d.customers && d.customers.length > 0) {
         const customer = d.customers[0];
-        // Pega o último pedido desse cliente
         const o = await shopifyGet('/orders.json', { customer_id: customer.id, status: 'any', limit: 1 });
         return o.orders?.[0] || null;
     }
@@ -70,14 +67,13 @@ export async function searchOrders(query) {
         return d.orders || [];
     }
 
-    // 2. É CPF? (11 dígitos numéricos)
+    // 2. É CPF? (11 dígitos)
     if (digits.length === 11) {
         const byCPF = await getOrderByCPF(digits);
         if (byCPF) return [byCPF];
     }
 
-    // 3. É Número de Pedido? (Padrão: #1024 ou 1024)
-    // Se não for email e tiver poucos digitos, assumimos que é o ID do pedido
+    // 3. É Número de Pedido?
     const orderName = raw.startsWith('#') ? raw : `#${digits}`;
     const d = await shopifyGet('/orders.json', { name: orderName, status: 'any', limit: 1 });
     
