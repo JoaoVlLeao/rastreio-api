@@ -1,4 +1,4 @@
-// index.js - VERSÃO COMPLETA (PRODUTOS + ENDEREÇO)
+// index.js - ATUALIZADO
 import express from 'express';
 import cors from 'cors';
 import { searchOrders } from './shopify.js';
@@ -23,11 +23,19 @@ app.get('/api/rastreio', async (req, res) => {
 
         const order = orders[0];
         
+        // Tenta pegar o tracking number. Se houver vários, tenta achar o que parece com a query
+        let trackingNumber = null;
+        if (order.fulfillments && order.fulfillments.length > 0) {
+            // Prioriza o tracking que foi buscado, se não, pega o primeiro disponível
+            const match = order.fulfillments.find(f => f.tracking_number === query);
+            trackingNumber = match ? match.tracking_number : order.fulfillments[0].tracking_number;
+        }
+
         // Monta o objeto completo para o Frontend
         const responseData = {
             name: order.name,
             created_at: order.created_at,
-            trackingNumber: order.fulfillments?.[0]?.tracking_number || null,
+            trackingNumber: trackingNumber,
             customer_name: order.customer ? `${order.customer.first_name} ${order.customer.last_name}` : 'Cliente',
             financial_status: order.financial_status,
             // Lista de produtos
