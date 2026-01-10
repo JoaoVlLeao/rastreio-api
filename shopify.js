@@ -42,10 +42,10 @@ async function shopifyGet(path, params = {}) {
   }
 }
 
-// --- PASSO 1: BUSCA GENÉRICA (IGUAL BARRA DE PESQUISA) ---
+// --- PASSO 1: A "REDE DE PESCA" (IGUAL BARRA DE PESQUISA) ---
 async function broadSearchGraphQL(term) {
-    // Note que não usamos "tracking_number:", usamos apenas o termo puro.
-    // Isso força a Shopify a varrer tudo (notas, tags, rastreio, nomes).
+    // Note que NÃO usamos "tracking_number:". Usamos apenas o termo puro.
+    // Isso força a Shopify a varrer tudo, achando o pedido onde quer que o número esteja.
     const query = `
     {
       orders(first: 5, query: "${term}") {
@@ -67,7 +67,7 @@ async function broadSearchGraphQL(term) {
         const result = await response.json();
         
         if (result.data && result.data.orders && result.data.orders.edges.length > 0) {
-            // Retorna todos os candidatos que a Shopify "achou" que podem ser esse pedido
+            // Retorna uma lista de IDs de pedidos que "podem" ser o que queremos
             return result.data.orders.edges.map(edge => edge.node.legacyResourceId);
         }
         return [];
@@ -80,23 +80,23 @@ async function broadSearchGraphQL(term) {
 function onlyDigits(s) { return (s || '').replace(/\D+/g, ''); }
 function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim()); }
 
-// --- PASSO 2: O FILTRO DE OURO (Validação Rigorosa) ---
+// --- PASSO 2: O "FILTRO DE OURO" (Validação) ---
 function orderHasTracking(order, trackingSearched) {
     if (!order.fulfillments || order.fulfillments.length === 0) return false;
     
-    // Normaliza tudo para string e remove espaços para comparar
+    // Limpa espaços e deixa minúsculo para garantir a comparação
     const target = String(trackingSearched).replace(/\s/g, '').toLowerCase();
     
-    // Varre todos os envios do pedido
+    // Varre todos os envios do pedido para ver se o rastreio existe MESMO
     return order.fulfillments.some(f => {
-        // Verifica campo simples
+        // Verifica o campo principal
         const t1 = f.tracking_number ? String(f.tracking_number).replace(/\s/g, '').toLowerCase() : '';
         
-        // Verifica lista de rastreios (alguns pedidos têm múltiplos no mesmo fulfillment)
+        // Verifica se está dentro de uma lista de rastreios
         const t2List = f.tracking_numbers || [];
         const matchInList = t2List.some(t => String(t).replace(/\s/g, '').toLowerCase() === target);
 
-        // Verifica campo tracking_url (às vezes o número tá solto lá)
+        // Verifica até na URL de rastreio se o número aparece lá
         const t3 = f.tracking_url ? String(f.tracking_url).toLowerCase() : '';
         const matchInUrl = t3.includes(target);
 
@@ -126,7 +126,7 @@ export async function searchOrders(query) {
         }
     }
 
-    // 3. É Número de Pedido Curto? (Ex: 1024)
+    // 3. É Número de Pedido Curto? (Ex: #1024)
     if ((raw.startsWith('#') || digits.length <= 5) && digits.length > 0) {
         const orderName = raw.startsWith('#') ? raw : `#${digits}`;
         const d = await shopifyGet('/orders.json', { name: orderName, status: 'any', limit: 1 });
@@ -135,29 +135,19 @@ export async function searchOrders(query) {
 
     // 4. É RASTREIO LONGO? (A Lógica Nova)
     if (raw.length > 5) {
-        // A. Pede pra Shopify tudo que parece com esse número (Barra de Pesquisa)
+        // A. Joga a rede: Pede pra Shopify tudo que parece com esse número
         const candidateIds = await broadSearchGraphQL(raw);
         
-        // B. Baixa e valida cada candidato
+        // B. Filtra o ouro: Baixa e valida cada candidato
         for (const id of candidateIds) {
             const d = await shopifyGet(`/orders/${id}.json`);
             if (d.order) {
                 // C. O momento da verdade: O número tá lá mesmo?
                 if (orderHasTracking(d.order, raw)) {
-                    return [d.order]; // ACHOU O CERTO!
+                    return [d.order]; // ACHOU E VALIDOU!
                 }
             }
         }
-        // Se a busca genérica falhar, tentamos uma última cartada: 
-        // Busca REST legada (as vezes funciona pra transportadoras específicas)
-        // mas filtrando manualmente pra não vir o #1001
-        /*
-        const legacy = await shopifyGet('/orders.json', { status: 'any', limit: 50 }); // Pega os últimos 50
-        if (legacy.orders) {
-             const found = legacy.orders.find(o => orderHasTracking(o, raw));
-             if (found) return [found];
-        }
-        */
     }
 
     return [];
